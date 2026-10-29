@@ -134,6 +134,7 @@ function render(S) {
         focus: function () { boxes[0].focus(); }
       };
     }
+    if (f.section) form.appendChild(el('h2', { cls: 'sec', text: f.section }));
     form.appendChild(wrap);
   });
 
@@ -152,14 +153,28 @@ function render(S) {
     root.appendChild(el('details', { cls: 'privacy' }, [el('summary', { text: 'How we handle your answers' })].concat(S.privacy.map(function (p) { return el('p', { text: p }); }))));
   }
 
+  var TL = S.thanksLink && /^https:\/\//.test(S.thanksLink.url || '') ? S.thanksLink : null;
   var thanks = el('section', { cls: 'thanks', hidden: true, tabindex: '-1' }, [
     el('h2', { text: S.thanksTitle || 'Thank you' }),
     el('p', { text: S.thanksBody || 'Your answers are in.' }),
+    TL ? el('a', { href: TL.url, cls: 'go', rel: 'noreferrer', referrerpolicy: 'no-referrer', text: TL.label || 'Continue' }) : null,
+    TL ? el('p', { cls: 'redir', 'aria-live': 'polite' }) : null,
     el('a', { href: '#', cls: 'again', text: 'Answer again' })
   ]);
+  var redirTimer = null;
+  function startRedirect() {
+    if (!TL || !TL.redirectSeconds) return;
+    var left = TL.redirectSeconds, line = thanks.querySelector('.redir');
+    var tick = function () {
+      if (left <= 0) { clearInterval(redirTimer); line.textContent = 'Redirecting\u2026'; location.assign(TL.url); return; }
+      line.textContent = 'Taking you there in ' + left + ' second' + (left === 1 ? '' : 's') + '\u2026';
+      left--;
+    };
+    clearInterval(redirTimer); tick(); redirTimer = setInterval(tick, 1000);
+  }
   root.appendChild(thanks);
   thanks.querySelector('.again').addEventListener('click', function (ev) {
-    ev.preventDefault(); store(false, false); form.reset(); form.dispatchEvent(new Event('change'));
+    ev.preventDefault(); clearInterval(redirTimer); var rl = thanks.querySelector('.redir'); if (rl) rl.textContent = ''; store(false, false); form.reset(); form.dispatchEvent(new Event('change'));
     Object.keys(refs).forEach(function (k) { var r = refs[k]; if (r.other) r.other.hidden = true; if (r.input && r.input.dispatchEvent) r.input.dispatchEvent(new Event('input')); });
     form.querySelectorAll('input:disabled').forEach(function (b) { b.disabled = false; });
     showForm(true);
@@ -214,7 +229,7 @@ function render(S) {
   });
 
   function send(body, attempt) {
-    var done = function () { busy = false; button.disabled = false; status.textContent = ''; store(false, true); sid = uuid(); showForm(false); };
+    var done = function () { busy = false; button.disabled = false; status.textContent = ''; store(false, true); sid = uuid(); showForm(false); startRedirect(); };
     if (PREVIEW) { window.__lastSurveyPayload = JSON.parse(body); setTimeout(done, 400); return; }
     fetch(E.url, { method: 'POST', body: body, headers: { 'Content-Type': 'text/plain;charset=utf-8' }, redirect: 'follow', credentials: 'omit', referrerPolicy: 'no-referrer' })
       .then(function (r) { return r.json(); })
